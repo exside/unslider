@@ -2,6 +2,7 @@
  *   Unslider by @idiot and @damirfoy
  *   Contributors:
  *   - @ShamoX
+ *	 - @exside
  *
  */
 
@@ -19,6 +20,8 @@
 			loop: !f,       // infinitely looping (boolean)
 			keys: f,        // keyboard shortcuts (boolean)
 			dots: f,        // display dots pagination (boolean)
+			dottext: f,		// display the index number of the slide as text in the dots
+			activecls: 'active', // classname that is appended to active dot and item
 			arrows: f,      // display prev/next arrows (boolean)
 			prev: '&larr;', // text or html inside prev button (string)
 			next: '&rarr;', // same as for prev option
@@ -27,8 +30,10 @@
 			complete: f,    // invoke after animation (function with argument)
 			items: '>ul',   // slides container selector
 			item: '>li',    // slidable items selector
+			transition: 'slide', // what slide transition to use
 			easing: 'swing',// easing function to use for animation
-			autoplay: true  // enable autoplay on initialisation
+			start: 0,		// defines which slide is shown on init
+			autoplay: !f  	// enable autoplay on initialisation
 		};
 
 		_.init = function(el, o) {
@@ -56,17 +61,25 @@
 				len = li.length;
 
 			//  Current indeed
-			_.i = 0;
+			_.i = o.start;
+			_.to(_.i); // enable active class on item and allow other items than the first to start with
 
 			//  Set the main element
 			el.css({width: _.max[0], height: li.first().outerHeight(), overflow: 'hidden'});
 
 			//  Set the relative widths
 			ul.css({position: 'relative', left: 0, width: (len * 100) + '%'});
-			if(o.fluid) {
+
+			if (o.fluid) {
 				li.css({'float': 'left', width: (100 / len) + '%'});
 			} else {
 				li.css({'float': 'left', width: (_.max[0]) + 'px'});
+			}
+
+			// Set up fading transition
+			if (o.transition === 'fade') {
+				li.css({display: 'none'});
+				li.eq(_.i).css({display: 'block'});
 			}
 
 			//  Autoslide
@@ -125,20 +138,22 @@
 				el.on('movestart', function(e) {
 					if ((e.distX > e.distY && e.distX < -e.distY) || (e.distX < e.distY && e.distX > -e.distY)) {
 						e.preventDefault();
-					}else{
-						el.data("left", _.ul.offset().left / el.width() * 100);
+					} else {
+						el.data('left', _.ul.offset().left / el.width() * 100);
 					}
 				}).on('move', function(e) {
 					var left = 100 * e.distX / el.width();
-					_.ul.css("left", el.data("left") + left + "%");
-					_.ul.data("left", left);
+					_.ul.css('left', el.data('left') + left + '%');
+					_.ul.data('left', left);
 				}).on('moveend', function(e) {
-					var left = _.ul.data("left");
-					if (Math.abs(left) > 30){
-						var i = left > 0 ? _.i-1 : _.i+1;
-						if (i < 0 || i >= len) i = _.i;
+					var left = _.ul.data('left');
+					if (Math.abs(left) > 30) {
+						var i = left > 0 ? _.i - 1 : _.i + 1;
+						if (i < 0 || i >= len) {
+							i = _.i;
+						}
 						_.to(i);
-					}else{
+					} else {
 						_.to(_.i);
 					}
 				});
@@ -170,24 +185,48 @@
 			if (index < 0) index = li.length - 1;
 			target = li.eq(index);
 
-			var speed = callback ? 5 : o.speed | 0,
-				easing = o.easing,
-				obj = {height: target.outerHeight()};
+			var obj = {height: target.outerHeight()},
+				speed = callback ? 5 : o.speed | 0,
+				easing = o.easing;
 
 			if (!ul.queue('fx').length) {
 				//  Handle those pesky dots
-				el.find('.dot').eq(index).addClass('active').siblings().removeClass('active');
+				el.find('.dot').eq(index).addClass(o.activecls).siblings().removeClass(o.activecls);
 
-				el.animate(obj, speed, easing) && ul.animate($.extend({left: '-' + index + '00%'}, obj), speed, easing, function(data) {
-					_.i = index;
-
-					$.isFunction(o.complete) && !callback && o.complete(el, target);
-				});
+				if (o.transition === 'fade') {
+					_.fade(target, index, obj, speed, callback);
+				} else {
+					_.slide(target, index, obj, speed, callback);
+				}
 			};
+		};
+
+		_.slide = function(target, index, obj, speed, callback) {
+			_.el.animate(obj, speed, _.o.easing) && _.ul.animate($.extend({left: '-' + index + '00%'}, obj), speed, _.o.easing, function(data) {
+				_.i = index;
+				target.addClass(_.o.activecls).siblings().removeClass(_.o.activecls);
+
+				$.isFunction(_.o.complete) && !callback && _.o.complete(_.el, target);
+			});
+		};
+
+		_.fade = function(target, index, obj, speed, callback) {
+			if (_.i != index) {
+				_.el.animate(obj, speed, _.o.easing) && _.li.eq(_.i).fadeOut(speed) && target.fadeIn(speed, function(data) {
+					_.i = index;
+					target.addClass(_.o.activecls).siblings().removeClass(_.o.activecls);
+
+					$.isFunction(_.o.complete) && !callback && _.o.complete(_.el, target);
+				});
+			}
 		};
 
 		//  Autoplay functionality
 		_.play = function() {
+			if (_.t) {
+				_.stop(); // Cancel an existing interval to avoid losing references to it
+			}
+
 			_.t = setInterval(function() {
 				_.to(_.i + 1);
 			}, _.o.delay | 0);
@@ -213,7 +252,7 @@
 			if (name == 'dot') {
 				html = '<ol class="dots">';
 					$.each(_.li, function(index) {
-						html += '<li class="' + (index == _.i ? name + ' active' : name) + '">' + ++index + '</li>';
+						html += '<li class="' + (index == _.i ? name + ' ' + _.o.activecls : name) + '">' + (_.o.dottext ? ++index : '') + '</li>';
 					});
 				html += '</ol>';
 			} else {
